@@ -11,6 +11,7 @@ click [here](https://calvin-xia.github.io/class1forever.github.io/) to enter.
 attention:the link above may not support China mainland network.
 
 you can visit [here](https://class1forever.rth1.xyz/) (utilizes retiehe deployment)or [here](https://class1forever.pages.dev/)(utilizes CloudFlare Pages)to enter.
+(better for pc&laptop visits)
 
 Uses MIT Licence
 

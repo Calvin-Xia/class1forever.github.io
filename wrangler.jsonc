@@ -12,7 +12,7 @@
     }
   ],
   "vars": {
-    "DETAILS_HINT": "输入口令后可查看姓名与学校，提示：语文老师的姓名拼音（例：张三就输入“zhangsan”）"
+    "DETAILS_HINT": "语文老师的姓名拼音（例：张三就输入“zhangsan”）"
   },
   "env": {
     "preview": {
@@ -23,7 +23,7 @@
         }
       ],
       "vars": {
-        "DETAILS_HINT": "输入口令后可查看姓名与学校，提示：语文老师的姓名拼音（例：张三就输入“zhangsan”）"
+        "DETAILS_HINT": "语文老师的姓名拼音（例：张三就输入“zhangsan”）"
       }
     }
   }

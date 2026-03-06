@@ -1,0 +1,3 @@
+DETAILS_PASSPHRASE="replace-with-local-passphrase"
+DETAILS_SESSION_SECRET="replace-with-long-random-secret"
+DETAILS_HINT="输入班内约定口令后可查看姓名与学校。"

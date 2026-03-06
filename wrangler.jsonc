@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "class1forever",
+  "pages_build_output_dir": ".",
+  "compatibility_date": "2026-03-06",
+  "kv_namespaces": [
+    {
+      "binding": "CLASS_MAP_DATA",
+      "id": "e6c9c4ff9bc84aa4979184515e713ecb",
+      "preview_id": "2761c6566ea945c2ac44da3a916cb840",
+      "remote": true
+    }
+  ],
+  "vars": {
+    "DETAILS_HINT": "输入口令后可查看姓名与学校，提示：语文老师的姓名拼音（例：张三就输入“zhangsan”）"
+  },
+  "env": {
+    "preview": {
+      "kv_namespaces": [
+        {
+          "binding": "CLASS_MAP_DATA",
+          "id": "2761c6566ea945c2ac44da3a916cb840"
+        }
+      ],
+      "vars": {
+        "DETAILS_HINT": "输入口令后可查看姓名与学校，提示：语文老师的姓名拼音（例：张三就输入“zhangsan”）"
+      }
+    }
+  }
+}

@@ -1,4 +1,6 @@
 .trae/
+.dev.vars
+.wrangler/
 js/data.js
 node_modules/
 dist/

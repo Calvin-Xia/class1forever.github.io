@@ -1,24 +1,23 @@
 const fs = require('fs');
 const path = require('path');
 
-const dataPath = path.join(__dirname, 'js', 'data.js');
-const envVarName = 'STUDENTS_DATA';
+const filesToCheck = [
+    path.join(__dirname, 'index.html'),
+    path.join(__dirname, 'js', 'map.js'),
+    path.join(__dirname, 'functions', 'api', 'map', 'public.js')
+];
 
-if (process.env[envVarName]) {
-    try {
-        const studentsData = JSON.parse(process.env[envVarName]);
-        const dataContent = `let students=\n${JSON.stringify(studentsData, null, 4)}\n`;
-        fs.writeFileSync(dataPath, dataContent, 'utf8');
-        console.log('✅ data.js 已从环境变量生成');
-    } catch (error) {
-        console.error('❌ 解析环境变量失败:', error.message);
+for (const filePath of filesToCheck) {
+    if (!fs.existsSync(filePath)) {
+        console.error(`❌ 缺少必要文件: ${path.relative(__dirname, filePath)}`);
         process.exit(1);
     }
-} else {
-    console.log('⚠️  环境变量 STUDENTS_DATA 未设置，检查本地 data.js 是否存在');
-    if (!fs.existsSync(dataPath)) {
-        console.error('❌ 本地 data.js 不存在，请设置环境变量或提供本地 data.js');
-        process.exit(1);
-    }
-    console.log('✅ 使用本地 data.js');
 }
+
+const indexHtml = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+if (indexHtml.includes('js/data.js')) {
+    console.error('❌ index.html 仍在加载 js/data.js，生产环境不能再公开静态学生数据。');
+    process.exit(1);
+}
+
+console.log('✅ 无需构建静态数据文件，地图数据将通过 Cloudflare Pages Functions + KV 提供');

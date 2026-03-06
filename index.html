@@ -32,7 +32,7 @@
                     exporting: 'js/vendor/exporting.js'
                 }
             ],
-            
+
             loadScript: function(src, callback) {
                 var script = document.createElement('script');
                 script.src = src;
@@ -40,42 +40,45 @@
                 script.onerror = function() { callback(false); };
                 document.head.appendChild(script);
             },
-            
+
             loadCDN: function(index, callback) {
                 var self = this;
                 if (index >= this.cdnList.length) {
                     callback(false);
                     return;
                 }
-                
+
                 var cdn = this.cdnList[index];
                 this.loadScript(cdn.highmaps, function(success) {
-                    if (success) {
-                        self.loadScript(cdn.drilldown, function(success2) {
-                            if (success2) {
-                                self.loadScript(cdn.exporting, function(success3) {
-                                    if (success3) {
-                                        console.log('Highmaps loaded from: ' + cdn.name);
-                                        callback(true);
-                                    } else {
-                                        self.loadCDN(index + 1, callback);
-                                    }
-                                });
-                            } else {
-                                self.loadCDN(index + 1, callback);
-                            }
-                        });
-                    } else {
+                    if (!success) {
                         self.loadCDN(index + 1, callback);
+                        return;
                     }
+
+                    self.loadScript(cdn.drilldown, function(drilldownSuccess) {
+                        if (!drilldownSuccess) {
+                            self.loadCDN(index + 1, callback);
+                            return;
+                        }
+
+                        self.loadScript(cdn.exporting, function(exportingSuccess) {
+                            if (!exportingSuccess) {
+                                self.loadCDN(index + 1, callback);
+                                return;
+                            }
+
+                            console.log('Highmaps loaded from: ' + cdn.name);
+                            callback(true);
+                        });
+                    });
                 });
             },
-            
+
             start: function(callback) {
                 this.loadCDN(0, callback);
             }
         };
-        
+
         window.HighmapsLoader = cdnLoader;
     })();
     </script>
@@ -84,9 +87,9 @@
     <div id="cdn-error" class="cdn-error" style="display: none;">
         <div class="cdn-error__content">
             <div class="cdn-error__icon">⚠️</div>
-            <h3 class="cdn-error__title">地图加载失败</h3>
-            <p class="cdn-error__message">无法加载地图资源，请检查网络连接后刷新页面。</p>
-            <button class="cdn-error__retry" onclick="location.reload()">重新加载</button>
+            <h3 id="cdn-error-title" class="cdn-error__title">地图加载失败</h3>
+            <p id="cdn-error-message" class="cdn-error__message">无法加载地图资源，请检查网络连接后刷新页面。</p>
+            <button id="cdn-error-retry" class="cdn-error__retry" type="button">重新加载</button>
         </div>
     </div>
 
@@ -98,7 +101,7 @@
             <div class="decorative-line decorative-line--1"></div>
             <div class="decorative-line decorative-line--2"></div>
         </div>
-        
+
         <main class="page" role="main">
             <header class="page__header">
                 <div class="header-content">
@@ -110,7 +113,7 @@
                     <p class="page__description">探索各地同学的足迹，点击地图，深入每个省份和城市的精彩故事。</p>
                 </div>
             </header>
-            
+
             <section class="map-section" aria-label="互动地图">
                 <div class="map-container">
                     <div class="map-frame">
@@ -118,7 +121,8 @@
                         <div class="map-frame__corner map-frame__corner--tr" aria-hidden="true"></div>
                         <div class="map-frame__corner map-frame__corner--bl" aria-hidden="true"></div>
                         <div class="map-frame__corner map-frame__corner--br" aria-hidden="true"></div>
-                        <button id="share-btn" class="share-btn" title="分享地图" aria-label="分享地图">
+                        <button id="details-btn" class="details-btn" type="button" aria-label="开启查看详情模式">查看详情</button>
+                        <button id="share-btn" class="share-btn" type="button" title="分享地图" aria-label="分享地图">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <circle cx="18" cy="5" r="3"></circle>
                                 <circle cx="6" cy="12" r="3"></circle>
@@ -152,119 +156,113 @@
             <h2 id="bs-title" class="visually-hidden">地区详情</h2>
         </div>
         <div class="bs-footer">
-            <button id="bs-drilldown-btn" class="bs-btn">进入详情</button>
+            <button id="bs-primary-btn" class="bs-btn bs-btn--secondary" type="button">查看详情</button>
+            <button id="bs-drilldown-btn" class="bs-btn" type="button">进入地图详情</button>
         </div>
     </div>
 
-    <div id="share-template" class="share-template" style="display: none;">
-        <div class="share-card">
-            <div class="share-card__header">
-                <h2 class="share-card__title">金鹰1班蹭饭地图</h2>
-                <p class="share-card__subtitle">探索各地同学的足迹</p>
-            </div>
-            <div class="share-card__map" id="share-map-container"></div>
-            <div class="share-card__stats">
-                <div class="stat-item">
-                    <span class="stat-value" id="stat-total">0</span>
-                    <span class="stat-label">总人数</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-value" id="stat-provinces">0</span>
-                    <span class="stat-label">覆盖省份</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-value" id="stat-cities">0</span>
-                    <span class="stat-label">覆盖城市</span>
-                </div>
-            </div>
-            <div class="share-card__footer">
-                <p>万州二中 · 金鹰1班</p>
-            </div>
+    <div id="auth-overlay" class="auth-overlay" hidden>
+        <div class="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+            <button id="auth-close" class="auth-modal__close" type="button" aria-label="关闭">×</button>
+            <h2 id="auth-title" class="auth-modal__title">查看详情</h2>
+            <p class="auth-modal__description">地图上先显示各地人数。输入口令后，可以按地区查看姓名和学校。</p>
+            <p id="auth-hint" class="auth-modal__hint"></p>
+            <form id="auth-form" class="auth-modal__form">
+                <label class="auth-modal__label" for="auth-passphrase">查看口令</label>
+                <input id="auth-passphrase" class="auth-modal__input" type="password" autocomplete="current-password" placeholder="输入口令">
+                <p id="auth-feedback" class="auth-modal__feedback" aria-live="polite"></p>
+                <button id="auth-submit" class="auth-modal__submit" type="submit">进入查看</button>
+            </form>
         </div>
     </div>
 
     <script>
-    HighmapsLoader.start(function(success) {
-        if (!success) {
+    (function() {
+        var criticalScripts = {
+            'js/china.js': true,
+            'js/map.js': true
+        };
+
+        function showFatalError(message) {
+            document.getElementById('cdn-error-title').textContent = '地图加载失败';
+            document.getElementById('cdn-error-message').textContent = message;
             document.getElementById('cdn-error').style.display = 'flex';
             document.getElementById('map-loading').style.display = 'none';
-            return;
         }
-        
-        var scripts = [
-            'js/nunjucks.min.js',
-            'js/china.js',
-            'js/province/zhejiang.js',
-            'js/province/beijing.js',
-            'js/province/jiangsu.js',
-            'js/province/neimenggu.js',
-            'js/province/guangdong.js',
-            'js/province/tianjin.js',
-            'js/province/hebei.js',
-            'js/province/shanxi.js',
-            'js/province/liaoning.js',
-            'js/province/jilin.js',
-            'js/province/heilongjiang.js',
-            'js/province/shanghai.js',
-            'js/province/anhui.js',
-            'js/province/fujian.js',
-            'js/province/jiangxi.js',
-            'js/province/shandong.js',
-            'js/province/henan.js',
-            'js/province/hubei.js',
-            'js/province/hunan.js',
-            'js/province/guangxi.js',
-            'js/province/hainan.js',
-            'js/province/chongqing.js',
-            'js/province/sichuan.js',
-            'js/province/guizhou.js',
-            'js/province/yunnan.js',
-            'js/province/xizang.js',
-            'js/province/shanxi2.js',
-            'js/province/gansu.js',
-            'js/province/qinghai.js',
-            'js/province/ningxia.js',
-            'js/province/xinjiang.js',
-            'js/data.js',
-            'js/map.js'
-        ];
-        
-        var loadNext = function(index) {
-            if (index >= scripts.length) {
-                var loadingEl = document.getElementById('map-loading');
-                if (loadingEl) loadingEl.style.display = 'none';
+
+        document.getElementById('cdn-error-retry').addEventListener('click', function() {
+            location.reload();
+        });
+
+        HighmapsLoader.start(function(success) {
+            if (!success) {
+                showFatalError('无法加载地图资源，请检查网络连接后刷新页面。');
                 return;
             }
-            var script = document.createElement('script');
-            script.src = scripts[index];
-            script.onload = function() { loadNext(index + 1); };
-            script.onerror = function() { 
-                console.error('Failed to load: ' + scripts[index]);
-                loadNext(index + 1); 
+
+            var scripts = [
+                'js/china.js',
+                'js/province/zhejiang.js',
+                'js/province/beijing.js',
+                'js/province/jiangsu.js',
+                'js/province/neimenggu.js',
+                'js/province/guangdong.js',
+                'js/province/tianjin.js',
+                'js/province/hebei.js',
+                'js/province/shanxi.js',
+                'js/province/liaoning.js',
+                'js/province/jilin.js',
+                'js/province/heilongjiang.js',
+                'js/province/shanghai.js',
+                'js/province/anhui.js',
+                'js/province/fujian.js',
+                'js/province/jiangxi.js',
+                'js/province/shandong.js',
+                'js/province/henan.js',
+                'js/province/hubei.js',
+                'js/province/hunan.js',
+                'js/province/guangxi.js',
+                'js/province/hainan.js',
+                'js/province/chongqing.js',
+                'js/province/sichuan.js',
+                'js/province/guizhou.js',
+                'js/province/yunnan.js',
+                'js/province/xizang.js',
+                'js/province/shanxi2.js',
+                'js/province/gansu.js',
+                'js/province/qinghai.js',
+                'js/province/ningxia.js',
+                'js/province/xinjiang.js',
+                'js/map.js'
+            ];
+
+            var loadNext = function(index) {
+                if (index >= scripts.length) {
+                    return;
+                }
+
+                var script = document.createElement('script');
+                script.src = scripts[index];
+                script.onload = function() {
+                    loadNext(index + 1);
+                };
+                script.onerror = function() {
+                    console.error('Failed to load: ' + scripts[index]);
+                    if (criticalScripts[scripts[index]]) {
+                        showFatalError('关键地图脚本加载失败，请稍后重试。');
+                        return;
+                    }
+                    loadNext(index + 1);
+                };
+                document.body.appendChild(script);
             };
-            document.body.appendChild(script);
-        };
-        
-        loadNext(0);
-    });
-    </script>
 
-    <script>
-        var isMobile = /mobile|android|iphone/i.test(navigator.userAgent);
-        var interactionNote = document.getElementById('interaction-note');
-        var interactionMessage = isMobile
-            ? '点击地图上的省份或城市，在底部查看同学分布与详情。'
-            : '在地图上悬停查看提示，点击省份或城市即可查看更多详细信息。';
-
-        if (interactionNote) {
-            interactionNote.textContent = interactionMessage;
-        }
-
-        document.addEventListener('wheel', function(e) {
-            if (e.target.closest('.tooltip .list')) {
-                e.stopPropagation();
-            }
-        }, { capture: true });
+            loadNext(0);
+        });
+    })();
     </script>
 </body>
 </html>
+
+
+

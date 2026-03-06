@@ -3,7 +3,11 @@
   "version": "1.0.0",
   "description": "蹭饭地图",
   "scripts": {
-    "build": "node build.js"
+    "build": "node build.js",
+    "cf:dev": "npx wrangler pages dev .",
+    "cf:types": "npx wrangler types",
+    "data:upload": "node scripts/upload-kv-data.mjs",
+    "data:upload:preview": "node scripts/upload-kv-data.mjs --env preview"
   },
   "author": "",
   "license": "MIT",

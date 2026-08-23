@@ -6,10 +6,7 @@ Forked from [lvris/map](https://github.com/lvris/map)
 
 ## 访问地址
 
-- GitHub Pages: https://calvin-xia.github.io/class1forever.github.io/
 - Cloudflare Pages: https://class1forever.pages.dev/
-
-建议优先使用 Cloudflare Pages 地址。中国大陆网络环境下，GitHub Pages 可能访问不稳定。
 
 ## 当前架构
 

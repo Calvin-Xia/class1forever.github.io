@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Static safety check
+        run: npm run build
+
+      - name: Syntax check
+        run: |
+          set -e
+          for file in $(find js shared scripts -type f \( -name '*.js' -o -name '*.mjs' \) ! -path 'js/vendor/*'); do
+            node --check "$file"
+          done
+          for file in $(find functions -type f \( -name '*.js' -o -name '*.mjs' \)); do
+            cat "$file" | node --check --input-type=module
+          done
+          node --check build.js

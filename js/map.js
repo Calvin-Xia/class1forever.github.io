@@ -60,6 +60,89 @@ function hideMapLoading() {
     }
 }
 
+function showProvinceLoading(provinceName) {
+    if (!ui.loading) {
+        return;
+    }
+    var text = ui.loading.querySelector('.map-loading__text');
+    if (text && provinceName) {
+        text.textContent = '正在加载 ' + provinceName + ' 地图...';
+    }
+    ui.loading.style.display = 'flex';
+}
+
+const ProvinceMapLoader = (function() {
+    const pending = {};
+
+    function isLoaded(filename) {
+        return Boolean(filename && Highcharts.maps['cn/' + filename]);
+    }
+
+    function load(filename) {
+        if (isLoaded(filename)) {
+            return Promise.resolve();
+        }
+        if (pending[filename]) {
+            return pending[filename];
+        }
+        pending[filename] = new Promise(function(resolve, reject) {
+            const script = document.createElement('script');
+            script.src = 'js/province/' + filename + '.js';
+            script.onload = function() {
+                delete pending[filename];
+                resolve();
+            };
+            script.onerror = function() {
+                delete pending[filename];
+                reject(new Error('Failed to load province map: ' + filename));
+            };
+            document.body.appendChild(script);
+        });
+        return pending[filename];
+    }
+
+    return {
+        isLoaded: isLoaded,
+        load: load
+    };
+})();
+
+const PUBLIC_CACHE_KEY = 'class1forever:public:v1';
+
+function readPublicCache() {
+    try {
+        const raw = localStorage.getItem(PUBLIC_CACHE_KEY);
+        if (!raw) {
+            return null;
+        }
+        const cached = JSON.parse(raw);
+        if (!cached || typeof cached !== 'object' || typeof cached.generatedAt !== 'string') {
+            return null;
+        }
+        if (!cached.provinces || !cached.stats) {
+            return null;
+        }
+        return cached;
+    } catch (_error) {
+        return null;
+    }
+}
+
+function writePublicCache(data) {
+    try {
+        localStorage.setItem(PUBLIC_CACHE_KEY, JSON.stringify(data));
+    } catch (_error) {
+        // Storage may be unavailable (private mode / quota); cache is best-effort.
+    }
+}
+
+function applyPublicData(data) {
+    AppState.publicData = data;
+    AppState.detailAccess = Boolean(data.detailAccess);
+    AppState.detailModeAvailable = Boolean(data.detailModeAvailable);
+    AppState.detailsHint = typeof data.detailsHint === 'string' ? data.detailsHint : '';
+}
+
 function showFatalError(message, title) {
     if (ui.errorTitle) {
         ui.errorTitle.textContent = title || '地图加载失败';
@@ -491,6 +574,16 @@ async function handleAuthSubmit(event) {
     }
 }
 
+async function clearDetailSession() {
+    try {
+        await fetchJson('/api/auth/logout', {
+            method: 'POST'
+        });
+    } catch (error) {
+        console.warn('Failed to clear detail session:', error);
+    }
+}
+
 function revokeDetailAccess(message) {
     AppState.detailAccess = false;
     AppState.detailModeEnabled = false;
@@ -498,6 +591,10 @@ function revokeDetailAccess(message) {
     updateDetailsButton();
     updateInteractionNote();
     BottomSheet.hideSensitive();
+
+    clearDetailSession().catch(function(error) {
+        console.warn('Failed to clear detail session:', error);
+    });
 
     if (message) {
         AppState.pendingPoint = BottomSheet.getCurrentPoint();
@@ -561,10 +658,7 @@ async function showDetailSheetForPoint(point, forceRefresh) {
     }
 }
 
-function drilldownPoint(point) {
-    AppState.detailRequestVersion += 1;
-    BottomSheet.close();
-
+function doRawDrilldown(point) {
     if (typeof point.doDrilldown === 'function') {
         point.doDrilldown();
         return;
@@ -573,6 +667,36 @@ function drilldownPoint(point) {
     point._isDrillingDown = true;
     point.firePointEvent('click');
     point._isDrillingDown = false;
+}
+
+function drilldownPoint(point) {
+    AppState.detailRequestVersion += 1;
+    BottomSheet.close();
+
+    if (point.drilldown && point._provinceFile && !ProvinceMapLoader.isLoaded(point._provinceFile)) {
+        if (point._provinceLoading) {
+            return;
+        }
+        point._provinceLoading = true;
+        showProvinceLoading(point.name);
+        ensureProvinceMap(point.name).then(function() {
+            point._provinceLoading = false;
+            hideMapLoading();
+            doRawDrilldown(point);
+        }).catch(function(error) {
+            point._provinceLoading = false;
+            hideMapLoading();
+            console.error('Failed to load province map:', error);
+            BottomSheet.showPublic(point, {
+                callout: '省级地图加载失败，请重试。',
+                hideHint: true,
+                hideEmpty: true
+            });
+        });
+        return;
+    }
+
+    doRawDrilldown(point);
 }
 
 function updateDetailsButton() {
@@ -638,14 +762,23 @@ function toggleDetailMode() {
         return;
     }
 
-    AppState.detailModeEnabled = !AppState.detailModeEnabled;
-    updateDetailsButton();
-    updateInteractionNote();
-
-    if (!AppState.detailModeEnabled) {
+    if (AppState.detailModeEnabled) {
+        // 退出查看 = 结束口令会话：清除 Cookie 与本地缓存，再次查看需重新输入口令。
+        AppState.detailModeEnabled = false;
+        AppState.detailAccess = false;
+        AppState.detailsCache.clear();
+        updateDetailsButton();
+        updateInteractionNote();
         BottomSheet.hideSensitive();
+        clearDetailSession().catch(function(error) {
+            console.warn('Failed to clear detail session:', error);
+        });
         return;
     }
+
+    AppState.detailModeEnabled = true;
+    updateDetailsButton();
+    updateInteractionNote();
 
     const currentPoint = BottomSheet.getCurrentPoint();
     if (BottomSheet.isActive() && currentPoint) {
@@ -662,6 +795,32 @@ function handlePointClick(event) {
 
     const shouldOpenSheet = isTouchDevice || AppState.detailModeEnabled || !this.drilldown;
     if (!shouldOpenSheet) {
+        if (this._provinceFile && !ProvinceMapLoader.isLoaded(this._provinceFile)) {
+            if (this._provinceLoading) {
+                return false;
+            }
+            if (event && typeof event.preventDefault === 'function') {
+                event.preventDefault();
+            }
+            const point = this;
+            point._provinceLoading = true;
+            showProvinceLoading(point.name);
+            ensureProvinceMap(point.name).then(function() {
+                point._provinceLoading = false;
+                hideMapLoading();
+                doRawDrilldown(point);
+            }).catch(function(error) {
+                point._provinceLoading = false;
+                hideMapLoading();
+                console.error('Failed to load province map:', error);
+                BottomSheet.showPublic(point, {
+                    callout: '省级地图加载失败，请重试。',
+                    hideHint: true,
+                    hideEmpty: true
+                });
+            });
+            return false;
+        }
         return true;
     }
 
@@ -692,53 +851,104 @@ function buildProvinceIndex(dataset) {
         point.city = null;
         point.cityCount = Object.keys(provinceSummary.cities || {}).length;
         point.drilldown = null;
+        point._provinceFile = null;
+        point._provinceLoading = false;
 
         provinces[point.name] = {
             name: point.name,
             pointData: point,
             cityCount: point.cityCount,
-            cities: {}
+            cities: {},
+            file: null
         };
     });
 
     Object.keys(provinces).forEach(function(provinceName) {
         const province = provinces[provinceName];
         const filename = province.pointData.properties && province.pointData.properties.filename;
-        if (!filename || !Highcharts.maps[`cn/${filename}`]) {
+        if (!filename) {
             return;
         }
 
-        const citySummary = (publicProvinces[provinceName] && publicProvinces[provinceName].cities) || {};
-        const subData = Highcharts.geojson(Highcharts.maps[`cn/${filename}`]);
-        Highcharts.each(subData, function(cityPoint) {
-            cityPoint.value = Number(citySummary[cityPoint.name] || 0);
-            cityPoint.province = provinceName;
-            cityPoint.city = cityPoint.name;
-            province.cities[cityPoint.name] = cityPoint;
-        });
-
-        province.subData = subData;
+        province.file = filename;
+        province.pointData._provinceFile = filename;
         province.pointData.drilldown = provinceName;
+
+        if (Highcharts.maps[`cn/${filename}`]) {
+            buildProvinceSubData(province);
+        }
     });
 
     AppState.provinces = provinces;
     return provinceData;
 }
 
+function buildProvinceSubData(province) {
+    const provinceName = province.name;
+    const filename = province.file;
+    if (!filename || !Highcharts.maps[`cn/${filename}`]) {
+        return;
+    }
+
+    const publicProvince = (AppState.publicData && AppState.publicData.provinces && AppState.publicData.provinces[provinceName]) || {};
+    const citySummary = publicProvince.cities || {};
+    const subData = Highcharts.geojson(Highcharts.maps[`cn/${filename}`]);
+    province.cities = {};
+    Highcharts.each(subData, function(cityPoint) {
+        cityPoint.value = Number(citySummary[cityPoint.name] || 0);
+        cityPoint.province = provinceName;
+        cityPoint.city = cityPoint.name;
+        province.cities[cityPoint.name] = cityPoint;
+    });
+
+    province.subData = subData;
+    if (AppState.drilldownSeries && AppState.drilldownSeries[provinceName]) {
+        AppState.drilldownSeries[provinceName].data = subData;
+    }
+}
+
+async function ensureProvinceMap(provinceName) {
+    const province = AppState.provinces[provinceName];
+    if (!province || !province.file) {
+        throw new Error('这个省份暂时打不开，请重新点一次。');
+    }
+    if (ProvinceMapLoader.isLoaded(province.file)) {
+        return;
+    }
+    await ProvinceMapLoader.load(province.file);
+    buildProvinceSubData(province);
+    syncDrilldownSeries();
+}
+
+function syncDrilldownSeries() {
+    if (!AppState.chart || !AppState.chart.options || !AppState.chart.options.drilldown) {
+        return;
+    }
+    const loaded = [];
+    Object.keys(AppState.drilldownSeries || {}).forEach(function(provinceName) {
+        const province = AppState.provinces[provinceName];
+        if (province && province.subData) {
+            loaded.push(AppState.drilldownSeries[provinceName]);
+        }
+    });
+    AppState.chart.options.drilldown.series = loaded;
+}
+
 function makeDrilldownSeries() {
     const series = [];
+    AppState.drilldownSeries = {};
 
     Object.keys(AppState.provinces).forEach(function(provinceName) {
         const province = AppState.provinces[provinceName];
-        if (!province.subData) {
+        if (!province.file) {
             return;
         }
 
-        series.push({
+        const seriesOptions = {
             id: province.name,
             name: province.name,
             provinceName: province.name,
-            data: province.subData,
+            data: province.subData || [],
             borderColor: '#e0d8cc',
             borderWidth: 1,
             states: {
@@ -759,7 +969,12 @@ function makeDrilldownSeries() {
                     textOutline: 'none'
                 }
             }
-        });
+        };
+
+        AppState.drilldownSeries[provinceName] = seriesOptions;
+        if (province.subData) {
+            series.push(seriesOptions);
+        }
     });
 
     return series;
@@ -777,6 +992,9 @@ function buildMapOptions(provinceData) {
                     hideMapLoading();
                 },
                 drilldown: function(e) {
+                    if (!e || !e.seriesOptions) {
+                        return;
+                    }
                     AppState.activeProvince = normalizeRegionToken(e && e.point && e.point.name);
                     BottomSheet.close();
                     this.setTitle(null, { text: e.point.name });
@@ -982,22 +1200,63 @@ function buildMapOptions(provinceData) {
 
 function initMap(provinceData) {
     AppState.chart = new Highcharts.Map('map', buildMapOptions(provinceData));
+    syncDrilldownSeries();
+}
+
+function renderMapFromData(publicData) {
+    const provinceData = buildProvinceIndex(publicData);
+    initMap(provinceData);
+    updateDetailsButton();
+    updateInteractionNote();
+    hideMapLoading();
+}
+
+function refreshChartFromData(publicData) {
+    const provinceData = buildProvinceIndex(publicData);
+    const chart = AppState.chart;
+    if (chart && chart.series && chart.series[0]) {
+        chart.series[0].setData(provinceData, true, true);
+    }
+    syncDrilldownSeries();
+    updateDetailsButton();
+    updateInteractionNote();
 }
 
 async function loadApp() {
-    try {
-        const publicData = await fetchJson('/api/map/public');
-        AppState.publicData = publicData;
-        AppState.detailAccess = Boolean(publicData.detailAccess);
-        AppState.detailModeAvailable = Boolean(publicData.detailModeAvailable);
-        AppState.detailsHint = typeof publicData.detailsHint === 'string' ? publicData.detailsHint : '';
+    const cached = readPublicCache();
+    let renderedFromCache = false;
 
-        const provinceData = buildProvinceIndex(publicData);
-        initMap(provinceData);
-        updateDetailsButton();
-        updateInteractionNote();
-        hideMapLoading();
+    if (cached) {
+        try {
+            applyPublicData(cached);
+            renderMapFromData(cached);
+            renderedFromCache = true;
+        } catch (error) {
+            console.warn('Failed to render cached map data:', error);
+        }
+    }
+
+    try {
+        const fresh = await fetchJson('/api/map/public');
+        writePublicCache(fresh);
+        if (renderedFromCache) {
+            const cacheIsStale = !cached || cached.generatedAt !== fresh.generatedAt;
+            applyPublicData(fresh);
+            if (cacheIsStale) {
+                refreshChartFromData(fresh);
+            } else {
+                updateDetailsButton();
+                updateInteractionNote();
+            }
+        } else {
+            applyPublicData(fresh);
+            renderMapFromData(fresh);
+        }
     } catch (error) {
+        if (renderedFromCache) {
+            console.warn('Failed to refresh public map data:', error);
+            return;
+        }
         console.error('Failed to initialize map application:', error);
         showFatalError(normalizeApiErrorMessage(error, '无法加载地图数据，请稍后重试。'));
     }
